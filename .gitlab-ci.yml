@@ -1,0 +1,46 @@
+image: maven:lastest
+
+before_script:
+  - sbt clean assembly
+  - echo "$SSH_KNOWN_HOSTS"
+  - 'which ssh-agent || ( apk add --update openssh )'
+  - eval $(ssh-agent -s)
+  - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add - > /dev/null
+  - mkdir -p ~/.ssh
+  - chmod 700 ~/.ssh
+  - echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+  - chmod 644 ~/.ssh/known_hosts
+  
+cache:
+  paths:
+    - /cache/.m2
+
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=/cache/.m2"
+
+stages:
+  - build
+  - deploy
+  
+build-crawler:
+  stage: build
+  script:
+    - cd $CI_PROJECT_DIR/news-x-mysqldb && mvn clean install
+    - cd $CI_PROJECT_DIR/news-x-crawler && mvn clean install
+    - mkdir -p $CI_PROJECT_DIR/artifacts
+    - cp $CI_PROJECT_DIR/news-x-crawler/target/$CRAWLER_RUNNING $CI_PROJECT_DIR/artifacts/
+  only:
+    - crawler
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - artifacts/$CRAWLER_RUNNING
+      
+deploy-crawler:
+  stage: deploy
+  script:
+    - scp artifacts/$CRAWLER_RUNNING tamvm@$CRAWLER_SERVER:~/tinmoi_crawler/
+    - rm -rf artifacts
+  only:
+    - crawler
+
